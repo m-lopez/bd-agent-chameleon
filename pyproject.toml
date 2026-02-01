@@ -1,0 +1,38 @@
+[project]
+name = "bd-agent-chameleon"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Michael Lopez", email = "michael.lopez.332@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typer==0.21",
+]
+
+[project.scripts]
+bd-agent-chameleon = "bd_agent_chameleon.main:main"
+
+[build-system]
+requires = ["uv_build>=0.9.20,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "ruff>=0.14.14",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
