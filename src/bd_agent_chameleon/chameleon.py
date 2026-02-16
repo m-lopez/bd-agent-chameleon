@@ -80,6 +80,13 @@ class Chameleon:
             elif self._state == ChameleonState.EXECUTING:
                 self._execute()
 
+    def run_once(self) -> None:
+        """Poll for a single task and execute it if found, then return."""
+        tasks: list[Task] = self._task_mgr.poll(CHAMELEON_TASK_LABEL)
+        if tasks:
+            self._current_task = tasks[0]
+            self._execute()
+
     def shutdown(self) -> None:
         """Signal the chameleon to stop after the current cycle."""
         self._state = ChameleonState.SHUTDOWN

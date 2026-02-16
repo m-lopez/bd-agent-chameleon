@@ -1,8 +1,7 @@
 """Protocol conformance tests for bd-agent-chameleon extension points."""
 
 from typing import Protocol, runtime_checkable
-
-from pathlib import Path
+from unittest.mock import patch
 
 from bd_agent_chameleon.beads_task_manager import BeadsTaskManager
 from bd_agent_chameleon.claude_launcher import ClaudeLauncher
@@ -58,7 +57,8 @@ class TestBeadsTaskManagerProtocol:
 
     def test_satisfies_protocol(self) -> None:
         """BeadsTaskManager satisfies the TaskManager protocol."""
-        mgr = BeadsTaskManager(db_path=Path("/tmp/fake"))
+        with patch.dict("os.environ", {"BEADS_DIR": "/tmp/fake"}):
+            mgr = BeadsTaskManager()
         assert isinstance(mgr, _CheckableTaskManager)
 
 

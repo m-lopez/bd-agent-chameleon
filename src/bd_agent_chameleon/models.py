@@ -7,6 +7,13 @@ ROLE_LABEL_PREFIX: str = "role-"
 CHAMELEON_TASK_LABEL: str = "chameleon-task"
 
 
+class RunMode(StrEnum):
+    """How the orchestrator should execute."""
+
+    POLL = "poll"
+    ONE_SHOT = "one-shot"
+
+
 class TaskStatus(StrEnum):
     """Lifecycle states for a task."""
 

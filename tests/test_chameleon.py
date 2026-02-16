@@ -292,6 +292,65 @@ class TestMultipleCycles:
         assert len(launcher.launches) == 2
 
 
+class TestRunOnce:
+    """Tests for Chameleon one-shot execution."""
+
+    def test_dispatches_task_when_found(self) -> None:
+        """run_once() polls, finds a task, and launches it."""
+        task_mgr: FakeTaskManager = FakeTaskManager([[TASK]])
+        launcher: FakeLauncher = FakeLauncher()
+        chameleon: Chameleon = Chameleon(
+            FakeConfigManager({"reviewer": ROLE}),
+            task_mgr,
+            launcher,
+            timedelta(seconds=0),
+        )
+        chameleon.run_once()
+
+        assert len(launcher.launches) == 1
+        assert launcher.launches[0] == (ROLE, TASK)
+
+    def test_no_task_does_nothing(self) -> None:
+        """run_once() returns immediately when no tasks are found."""
+        task_mgr: FakeTaskManager = FakeTaskManager([[]])
+        launcher: FakeLauncher = FakeLauncher()
+        chameleon: Chameleon = Chameleon(
+            FakeConfigManager(),
+            task_mgr,
+            launcher,
+            timedelta(seconds=0),
+        )
+        chameleon.run_once()
+
+        assert len(launcher.launches) == 0
+        assert len(task_mgr.polled_labels) == 1
+
+    def test_does_not_loop(self) -> None:
+        """run_once() processes at most one task, even when multiple exist."""
+        task_a: Task = Task(
+            id="1", title="A", description="A.",
+            status=TaskStatus.OPEN,
+            labels=["chameleon-task", "role-reviewer"],
+        )
+        task_b: Task = Task(
+            id="2", title="B", description="B.",
+            status=TaskStatus.OPEN,
+            labels=["chameleon-task", "role-reviewer"],
+        )
+        task_mgr: FakeTaskManager = FakeTaskManager([[task_a], [task_b]])
+        launcher: FakeLauncher = FakeLauncher()
+        chameleon: Chameleon = Chameleon(
+            FakeConfigManager({"reviewer": ROLE}),
+            task_mgr,
+            launcher,
+            timedelta(seconds=0),
+        )
+        chameleon.run_once()
+
+        assert len(launcher.launches) == 1
+        assert len(task_mgr.polled_labels) == 1
+
+
 class TestShutdown:
     """Tests for Chameleon shutdown behavior."""
 

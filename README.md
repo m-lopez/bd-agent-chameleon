@@ -70,10 +70,9 @@ interactive = false
 ### Running a worker
 
 ```bash
+export BEADS_DIR=/path/to/beads/db
 bd-agent-chameleon run \
-  --role implementer \
   --config roles.toml \
-  --db /path/to/beads/db \
   --poll-interval 5.0
 ```
 

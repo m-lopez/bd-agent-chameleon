@@ -2,7 +2,6 @@
 
 import json
 import subprocess
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -10,7 +9,17 @@ import pytest
 from bd_agent_chameleon.beads_task_manager import BeadsTaskManager
 from bd_agent_chameleon.models import Task, TaskStatus
 
-DB_PATH: Path = Path("/tmp/test-beads")
+BEADS_ENV: dict[str, str] = {"BEADS_DIR": "/tmp/test-beads"}
+
+
+class TestInit:
+    """Tests for BeadsTaskManager initialization."""
+
+    def test_raises_when_beads_dir_not_set(self) -> None:
+        """Raises RuntimeError when BEADS_DIR is missing."""
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(RuntimeError, match="BEADS_DIR"):
+                BeadsTaskManager()
 
 
 class TestPoll:
@@ -37,11 +46,11 @@ class TestPoll:
         completed = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=raw_json, stderr="",
         )
-        with patch(
+        with patch.dict("os.environ", BEADS_ENV), patch(
             "bd_agent_chameleon.beads_task_manager.subprocess.run",
             return_value=completed,
         ) as mock_run:
-            mgr = BeadsTaskManager(db_path=DB_PATH)
+            mgr = BeadsTaskManager()
             tasks: list[Task] = mgr.poll("chameleon-task")
 
         mock_run.assert_called_once()
@@ -50,6 +59,7 @@ class TestPoll:
         assert "--label" in args
         assert "chameleon-task" in args
         assert "--json" in args
+        assert "--db" not in args
 
         assert len(tasks) == 2
         assert tasks[0] == Task(
@@ -65,11 +75,11 @@ class TestPoll:
         completed = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="[]", stderr="",
         )
-        with patch(
+        with patch.dict("os.environ", BEADS_ENV), patch(
             "bd_agent_chameleon.beads_task_manager.subprocess.run",
             return_value=completed,
         ):
-            mgr = BeadsTaskManager(db_path=DB_PATH)
+            mgr = BeadsTaskManager()
             tasks: list[Task] = mgr.poll("chameleon-task")
 
         assert tasks == []
@@ -82,11 +92,11 @@ class TestPoll:
         completed = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=raw_json, stderr="",
         )
-        with patch(
+        with patch.dict("os.environ", BEADS_ENV), patch(
             "bd_agent_chameleon.beads_task_manager.subprocess.run",
             return_value=completed,
         ):
-            mgr = BeadsTaskManager(db_path=DB_PATH)
+            mgr = BeadsTaskManager()
             tasks: list[Task] = mgr.poll("chameleon-task")
 
         assert tasks[0].description == ""
@@ -99,11 +109,11 @@ class TestPoll:
         completed = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=raw_json, stderr="",
         )
-        with patch(
+        with patch.dict("os.environ", BEADS_ENV), patch(
             "bd_agent_chameleon.beads_task_manager.subprocess.run",
             return_value=completed,
         ):
-            mgr = BeadsTaskManager(db_path=DB_PATH)
+            mgr = BeadsTaskManager()
             tasks: list[Task] = mgr.poll("chameleon-task")
 
         assert tasks[0].labels == []
@@ -121,11 +131,11 @@ class TestPoll:
         completed = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=raw_json, stderr="",
         )
-        with patch(
+        with patch.dict("os.environ", BEADS_ENV), patch(
             "bd_agent_chameleon.beads_task_manager.subprocess.run",
             return_value=completed,
         ):
-            mgr = BeadsTaskManager(db_path=DB_PATH)
+            mgr = BeadsTaskManager()
             tasks: list[Task] = mgr.poll("chameleon-task")
 
         assert tasks[0].labels == ["chameleon-task", "role-qa"]
@@ -136,10 +146,10 @@ class TestErrorHandling:
 
     def test_bd_failure_raises_called_process_error(self) -> None:
         """CalledProcessError propagates when bd exits non-zero."""
-        with patch(
+        with patch.dict("os.environ", BEADS_ENV), patch(
             "bd_agent_chameleon.beads_task_manager.subprocess.run",
             side_effect=subprocess.CalledProcessError(1, "bd"),
         ):
-            mgr = BeadsTaskManager(db_path=DB_PATH)
+            mgr = BeadsTaskManager()
             with pytest.raises(subprocess.CalledProcessError):
                 mgr.poll("chameleon-task")

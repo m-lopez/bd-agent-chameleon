@@ -133,7 +133,7 @@ The following are explicitly not concerns of this runtime:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                      CLI (typer)                         │
-│           bd-agent-chameleon --config ... --db ...        │
+│           bd-agent-chameleon --config ...                  │
 │                                                          │
 │  Wires dependencies:                                     │
 │    config_mgr = ConfigManager(...)                       │
