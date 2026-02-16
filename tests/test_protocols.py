@@ -1,5 +1,6 @@
 """Protocol conformance tests for bd-agent-chameleon extension points."""
 
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 from unittest.mock import patch
 
@@ -67,5 +68,5 @@ class TestClaudeLauncherProtocol:
 
     def test_satisfies_protocol(self) -> None:
         """ClaudeLauncher satisfies the SessionLauncher protocol."""
-        launcher = ClaudeLauncher()
+        launcher = ClaudeLauncher(cwd=Path("/tmp"))
         assert isinstance(launcher, _CheckableSessionLauncher)

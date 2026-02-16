@@ -1,10 +1,12 @@
 """Tests for ClaudeLauncher."""
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from bd_agent_chameleon.claude_launcher import ClaudeLauncher, _WORKFLOW_TEMPLATE
+from bd_agent_chameleon.claude_launcher import ClaudeLauncher
 from bd_agent_chameleon.models import Role, Task, TaskStatus
 
+_CWD: Path = Path("/fake/project")
 
 TASK: Task = Task(
     id="42",
@@ -50,23 +52,33 @@ class TestBuildCommand:
     """Tests for ClaudeLauncher._build_command."""
 
     def test_with_role_non_interactive(self) -> None:
-        """Non-interactive role produces --print and --agent flags."""
+        """Non-interactive role produces --print, --verbose, --output-format, --permission-mode, and --agent."""
         role: Role = Role(name="reviewer", prompt="Review.", interactive=False)
         cmd: list[str] = ClaudeLauncher._build_command("the prompt", role)
 
         assert cmd[0] == "claude"
         assert cmd[1] == "the prompt"
         assert "--print" in cmd
+        assert "--verbose" in cmd
+        assert "--output-format" in cmd
+        fmt_idx: int = cmd.index("--output-format")
+        assert cmd[fmt_idx + 1] == "stream-json"
+        assert "--permission-mode" in cmd
+        perm_idx: int = cmd.index("--permission-mode")
+        assert cmd[perm_idx + 1] == "bypassPermissions"
         assert "--agent" in cmd
         agent_idx: int = cmd.index("--agent")
         assert cmd[agent_idx + 1] == "reviewer"
 
     def test_with_role_interactive(self) -> None:
-        """Interactive role omits --print but includes --agent."""
+        """Interactive role omits --print, --verbose, --output-format, and --permission-mode."""
         role: Role = Role(name="writer", prompt="Write.", interactive=True)
         cmd: list[str] = ClaudeLauncher._build_command("the prompt", role)
 
         assert "--print" not in cmd
+        assert "--verbose" not in cmd
+        assert "--output-format" not in cmd
+        assert "--permission-mode" not in cmd
         assert "--agent" in cmd
         agent_idx: int = cmd.index("--agent")
         assert cmd[agent_idx + 1] == "writer"
@@ -86,47 +98,53 @@ class TestLaunch:
     def test_launch_with_role(
         self, mock_stdin: MagicMock, mock_run: MagicMock
     ) -> None:
-        """launch() invokes subprocess.run with the built command."""
+        """launch() invokes subprocess.run with the built command and cwd."""
         mock_stdin.isatty.return_value = False
         role: Role = Role(name="reviewer", prompt="Review.", interactive=False)
 
-        ClaudeLauncher().launch(role, TASK)
+        ClaudeLauncher(cwd=_CWD).launch(role, TASK)
 
         mock_run.assert_called_once()
         cmd: list[str] = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
         assert "--print" in cmd
+        assert "--verbose" in cmd
+        assert "--output-format" in cmd
         assert "--agent" in cmd
+        assert mock_run.call_args[1]["cwd"] == _CWD
 
     @patch("bd_agent_chameleon.claude_launcher.subprocess.run")
     @patch("bd_agent_chameleon.claude_launcher.sys.stdin")
     def test_launch_without_role(
         self, mock_stdin: MagicMock, mock_run: MagicMock
     ) -> None:
-        """launch() works with role=None."""
+        """launch() works with role=None and still passes cwd."""
         mock_stdin.isatty.return_value = False
 
-        ClaudeLauncher().launch(None, TASK)
+        ClaudeLauncher(cwd=_CWD).launch(None, TASK)
 
         mock_run.assert_called_once()
         cmd: list[str] = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
         assert "--print" not in cmd
         assert "--agent" not in cmd
+        assert mock_run.call_args[1]["cwd"] == _CWD
 
     @patch("bd_agent_chameleon.claude_launcher.subprocess.run")
     @patch("bd_agent_chameleon.claude_launcher.sys.stdin")
     def test_launch_interactive_omits_print(
         self, mock_stdin: MagicMock, mock_run: MagicMock
     ) -> None:
-        """launch() omits --print for interactive roles."""
+        """launch() omits --print, --verbose, and --output-format for interactive roles."""
         mock_stdin.isatty.return_value = False
         role: Role = Role(name="writer", prompt="Write.", interactive=True)
 
-        ClaudeLauncher().launch(role, TASK)
+        ClaudeLauncher(cwd=_CWD).launch(role, TASK)
 
         cmd: list[str] = mock_run.call_args[0][0]
         assert "--print" not in cmd
+        assert "--verbose" not in cmd
+        assert "--output-format" not in cmd
 
     @patch("bd_agent_chameleon.claude_launcher.subprocess.run")
     @patch("bd_agent_chameleon.claude_launcher.termios.tcsetattr")
@@ -146,8 +164,9 @@ class TestLaunch:
 
         role: Role = Role(name="reviewer", prompt="Review.", interactive=False)
 
-        ClaudeLauncher().launch(role, TASK)
+        ClaudeLauncher(cwd=_CWD).launch(role, TASK)
 
         mock_tcgetattr.assert_called_once_with(mock_stdin)
         mock_tcsetattr.assert_called_once()
         mock_run.assert_called_once()
+        assert mock_run.call_args[1]["cwd"] == _CWD

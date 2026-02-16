@@ -28,7 +28,7 @@ def run(
     """Run bd-agent-chameleon with dynamic role resolution."""
     config_mgr: ConfigManager = ConfigManager(config)
     task_mgr: BeadsTaskManager = BeadsTaskManager()
-    launcher: ClaudeLauncher = ClaudeLauncher()
+    launcher: ClaudeLauncher = ClaudeLauncher(cwd=Path.cwd())
     interval: timedelta = timedelta(seconds=poll_interval)
     chameleon: Chameleon = Chameleon(config_mgr, task_mgr, launcher, interval)
 
