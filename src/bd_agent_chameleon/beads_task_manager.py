@@ -15,6 +15,7 @@ def _parse_task(data: dict[str, Any]) -> Task:
         title=data["title"],
         description=data.get("description", ""),
         status=TaskStatus(data["status"]),
+        labels=data.get("labels", []),
     )
 
 
@@ -44,10 +45,3 @@ class BeadsTaskManager:
         )
         return [_parse_task(entry) for entry in raw]
 
-    def claim(self, task_id: str) -> None:
-        """Claim a task by setting its status to in_progress."""
-        self._run_bd(["update", task_id, "--claim"])
-
-    def complete(self, task_id: str) -> None:
-        """Complete a task by closing it."""
-        self._run_bd(["close", task_id])

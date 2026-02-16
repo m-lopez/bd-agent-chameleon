@@ -27,17 +27,11 @@ class FakeTaskManager:
         """Return an empty task list."""
         return []
 
-    def claim(self, task_id: str) -> None:
-        """No-op claim."""
-
-    def complete(self, task_id: str) -> None:
-        """No-op complete."""
-
 
 class FakeSessionLauncher:
     """Minimal SessionLauncher implementation for conformance testing."""
 
-    def launch(self, role: Role, task: Task) -> None:
+    def launch(self, role: Role | None, task: Task) -> None:
         """No-op launch."""
 
 
@@ -45,7 +39,7 @@ class TestTaskManagerProtocol:
     """Tests for TaskManager protocol conformance."""
 
     def test_fake_satisfies_protocol(self) -> None:
-        """A class with poll/claim/complete satisfies TaskManager."""
+        """A class with poll() satisfies TaskManager."""
         mgr = FakeTaskManager()
         assert isinstance(mgr, _CheckableTaskManager)
 

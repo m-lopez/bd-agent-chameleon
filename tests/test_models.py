@@ -2,7 +2,13 @@
 
 import pytest
 
-from bd_agent_chameleon.models import Role, Task, TaskStatus
+from bd_agent_chameleon.models import (
+    CHAMELEON_TASK_LABEL,
+    Role,
+    Task,
+    TaskStatus,
+    extract_role_name,
+)
 
 
 class TestTask:
@@ -15,11 +21,13 @@ class TestTask:
             title="Fix the widget",
             description="The widget is broken",
             status=TaskStatus.OPEN,
+            labels=["chameleon-task", "role-reviewer"],
         )
         assert task.id == "abc-123"
         assert task.title == "Fix the widget"
         assert task.description == "The widget is broken"
         assert task.status == TaskStatus.OPEN
+        assert task.labels == ["chameleon-task", "role-reviewer"]
 
     def test_status_is_string(self) -> None:
         """TaskStatus values compare equal to their string form."""
@@ -28,14 +36,46 @@ class TestTask:
             title="t",
             description="d",
             status=TaskStatus.IN_PROGRESS,
+            labels=[],
         )
         assert task.status == "in_progress"
 
     def test_frozen(self) -> None:
         """Task instances are immutable."""
-        task = Task(id="1", title="t", description="d", status=TaskStatus.OPEN)
+        task = Task(
+            id="1", title="t", description="d",
+            status=TaskStatus.OPEN, labels=[],
+        )
         with pytest.raises(AttributeError):
             task.id = "2"  # type: ignore[misc]
+
+
+class TestExtractRoleName:
+    """Tests for extract_role_name helper."""
+
+    def test_extracts_role_from_label(self) -> None:
+        """Returns the role name from a role-* label."""
+        assert extract_role_name(["chameleon-task", "role-reviewer"]) == "reviewer"
+
+    def test_returns_none_when_no_role_label(self) -> None:
+        """Returns None when no role-* label is present."""
+        assert extract_role_name(["chameleon-task", "priority-high"]) is None
+
+    def test_first_role_label_wins(self) -> None:
+        """Returns the first role-* label when multiple are present."""
+        assert extract_role_name(["role-writer", "role-reviewer"]) == "writer"
+
+    def test_empty_labels(self) -> None:
+        """Returns None for an empty labels list."""
+        assert extract_role_name([]) is None
+
+
+class TestChameleonTaskLabel:
+    """Tests for the CHAMELEON_TASK_LABEL constant."""
+
+    def test_value(self) -> None:
+        """Constant has the expected value."""
+        assert CHAMELEON_TASK_LABEL == "chameleon-task"
 
 
 class TestRole:
@@ -51,27 +91,6 @@ class TestRole:
         assert role.name == "reviewer"
         assert role.prompt == "Review the code"
         assert role.interactive is False
-        assert role.agent is None
-
-    def test_label_derived_from_name(self) -> None:
-        """Label is auto-derived as 'role-{name}'."""
-        role = Role(name="reviewer", prompt="p", interactive=False)
-        assert role.label == "role-reviewer"
-
-    def test_label_with_different_names(self) -> None:
-        """Label derivation works for various role names."""
-        assert Role(name="writer", prompt="p", interactive=True).label == "role-writer"
-        assert Role(name="qa", prompt="p", interactive=False).label == "role-qa"
-
-    def test_agent_optional(self) -> None:
-        """Agent field can be set explicitly."""
-        role = Role(
-            name="coder",
-            prompt="Write code",
-            interactive=False,
-            agent="my-agent",
-        )
-        assert role.agent == "my-agent"
 
     def test_frozen(self) -> None:
         """Role instances are immutable."""

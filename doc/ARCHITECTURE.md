@@ -3,10 +3,10 @@
 ## Domain Model
 
 bd-agent-chameleon is a runtime for agent orchestration. It polls a task management
-system for work, claims tasks, and launches Claude sessions to execute them.
-It is not an application framework — output contracts, DAG design, and
-workflow logic are concerns of the flow authors building on top of this
-runtime.
+system for work, resolves the appropriate role from each ticket's labels, and
+launches Claude sessions to execute them. It is not an application framework —
+output contracts, DAG design, and workflow logic are concerns of the flow authors
+building on top of this runtime.
 
 ### Concepts
 
@@ -14,44 +14,60 @@ runtime.
 
 Pure configuration that defines how a Claude session behaves.
 
-| Field       | Type           | Description                                        |
-|-------------|----------------|----------------------------------------------------|
-| name        | `str`          | Unique identifier for the role.                    |
-| agent       | `str \| None`  | Claude `--agent` flag. Optional.                   |
-| prompt      | `str`          | Initial system prompt passed to Claude.            |
-| interactive | `bool`         | If true, Claude runs interactively (no `--print`). |
+| Field       | Type   | Description                                        |
+|-------------|--------|----------------------------------------------------|
+| name        | `str`  | Unique identifier for the role.                    |
+| prompt      | `str`  | Initial system prompt passed to Claude.            |
+| interactive | `bool` | If true, Claude runs interactively (no `--print`). |
 
-A role maps 1:1 to a bd-agent-chameleon instance at runtime.
+Roles are resolved per-ticket from `role-*` labels (see below).
 
 #### bd-agent-chameleon Instance
 
-A running process loaded with a single role configuration.
+A running process that dynamically resolves roles from ticket labels.
 
-- **One role per process.** Multi-role is achieved by running multiple
-  bd-agent-chameleon processes, each with a different role.
-- **Label filter** is derived from the role name (e.g., role name `reviewer`
-  produces beads label `role-reviewer`).
+- **Dynamic role resolution.** A single chameleon instance services tickets for
+  any role. The role is determined per-ticket from a `role-X` label.
+- **Polling label** is fixed: `chameleon-task`. All tickets intended for the
+  chameleon carry this label.
+- **Role source** is the `role-X` label on the ticket, where X is the role name.
+  The role name is used as the `--agent` value and to look up configuration.
 - **Lifecycle states:** `polling` -> `executing` -> `polling` -> `shutdown`.
 
 During `polling`, the instance queries the task management system for open
-tasks matching its label filter. When a task is found, it transitions to
-`executing`: it claims the task (marks it `in_progress`), launches Claude
-with the role configuration, and on Claude exit marks the task `closed`.
-It then returns to `polling`.
+tasks labeled `chameleon-task`. When a task is found, it transitions to
+`executing`: it resolves the role from the ticket's labels, then launches
+Claude with the role configuration and a workflow prompt that instructs Claude
+to manage the ticket lifecycle (read, claim, work, close). It then returns to
+`polling`.
+
+#### Task Lifecycle Delegation
+
+The chameleon no longer claims or completes tasks itself. Instead, the prompt
+instructs Claude to manage the ticket lifecycle:
+
+```
+Use this workflow to execute the task in the ticket:
+  - Read the ticket using: `bd show <TICKET_ID>`
+  - Claim the ticket using: `bd update <TICKET_ID> --claim`
+  - Do the work described in the ticket
+  - Then close the ticket using: `bd close <TICKET_ID>`
+```
+
+This is safe because the chameleon processes one task at a time (synchronous
+`subprocess.run` blocks until Claude exits).
 
 #### Task Management System
 
 An external system that the runtime integrates with. Currently
 [beads](https://github.com/steveyegge/beads).
 
-The runtime requires only three operations from the task management system:
+The runtime requires only one operation from the task management system:
 
 1. **poll** — list tasks matching a label with status `open`.
-2. **claim** — set a task's status to `in_progress`.
-3. **complete** — set a task's status to `closed`.
 
-Everything else — task creation, prioritization, dependency management — is
-handled by humans or higher-level tooling outside this runtime.
+Task claiming and completion are delegated to the Claude session via the
+workflow prompt.
 
 #### Task
 
@@ -62,11 +78,11 @@ A unit of work as seen by the runtime.
 | id          | `str`                             | Unique identifier from the task system.               |
 | title       | `str`                             | Short description of the work.                        |
 | description | `str`                             | Detailed description of the work.                     |
-| role label  | `str`                             | Matches a bd-agent-chameleon instance's label filter.  |
+| labels      | `list[str]`                       | Labels attached to the ticket.                        |
 | status      | `open \| in_progress \| closed`   | Current lifecycle state.                              |
 
-The runtime does not interpret priority, dependencies, or other
-task-system-specific fields. Those are concerns of the flow authors.
+The runtime uses labels to determine the polling filter (`chameleon-task`) and
+to resolve the role (`role-X`).
 
 #### Document Store
 
@@ -80,7 +96,7 @@ define their own conventions for organizing output artifacts.
 A person who interacts with the system in two capacities:
 
 - **Task creator** — authors tasks in the task management system with
-  appropriate role labels. This happens outside the runtime.
+  `chameleon-task` and `role-X` labels. This happens outside the runtime.
 - **Session interactor** — provides input to Claude sessions running in
   interactive mode (i.e., when a role has `interactive: true`).
 
@@ -104,12 +120,9 @@ The following are explicitly not concerns of this runtime:
 ### Open Questions
 
 1. **Role config format** — where does role configuration live? A TOML/YAML
-   file? CLI flags? This determines how `bd-agent-chameleon --role reviewer`
-   resolves the prompt, agent, and interactive settings.
-2. **Task-to-prompt mapping** — when a task is claimed, what content is
-   passed to Claude? The title? Description? Both? Prepended to the role's
-   initial prompt? This is the seam between the runtime and flow authors.
-3. **Beads integration surface** — should the runtime shell out to the `bd`
+   file? CLI flags? This determines how role names from ticket labels resolve
+   to prompt, and interactive settings.
+2. **Beads integration surface** — should the runtime shell out to the `bd`
    CLI with `--json` output, or use a Python abstraction layer? An
    abstraction would make the task management system swappable.
 
@@ -120,7 +133,7 @@ The following are explicitly not concerns of this runtime:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                      CLI (typer)                         │
-│           bd-agent-chameleon --role reviewer              │
+│           bd-agent-chameleon --config ... --db ...        │
 │                                                          │
 │  Wires dependencies:                                     │
 │    config_mgr = ConfigManager(...)                       │
@@ -139,17 +152,19 @@ The following are explicitly not concerns of this runtime:
 │  run() → main loop                                       │
 │                                                          │
 │  States: polling → executing → polling → shutdown        │
+│                                                          │
+│  _poll() → polls with "chameleon-task" label             │
+│  _resolve_role(task) → extracts role-X from labels       │
+│  _execute() → resolves role, launches session            │
 └─────────┬──────────────┬───────────────────┬─────────────┘
           │              │                   │
           ▼              ▼                   ▼
-┌────────────┐ ┌──────────────┐ ┌────────────────────┐
-│TaskManager │ │ConfigManager │ │SessionLauncher     │
-│«protocol»  │ │              │ │«protocol»          │
-│            │ │- load_role() │ │                    │
-│- poll()    │ │→ Role        │ │- launch(Role, Task)│
-│- claim()   │ │              │ │                    │
-│- complete()│ │              │ │                    │
-└─────┬──────┘ └──────────────┘ └──────────┬─────────┘
+┌────────────┐ ┌──────────────┐ ┌────────────────────────┐
+│TaskManager │ │ConfigManager │ │SessionLauncher         │
+│«protocol»  │ │              │ │«protocol»              │
+│            │ │- load_role() │ │                        │
+│- poll()    │ │→ Role | None │ │- launch(Role|None,Task)│
+└─────┬──────┘ └──────────────┘ └──────────┬─────────────┘
       │ implements                         │ implements
       ▼                                    ▼
 ┌──────────────┐                  ┌─────────────────┐
@@ -161,14 +176,12 @@ The following are explicitly not concerns of this runtime:
 
 #### Chameleon
 
-The core orchestrator. Maps to the **bd-agent-chameleon Instance** in the domain
-model. Receives all dependencies via constructor injection.
+The core orchestrator. Receives all dependencies via constructor injection.
 
 - Owns the state machine: `polling` → `executing` → `polling` → `shutdown`.
-- During `polling`, calls `TaskManager.poll()` with the label filter
-  derived from its Role.
-- During `executing`, claims the task, delegates to SessionLauncher,
-  then completes the task.
+- During `polling`, calls `TaskManager.poll("chameleon-task")`.
+- During `executing`, resolves the role from the task's labels via
+  `ConfigManager.load_role()`, then delegates to `SessionLauncher.launch()`.
 - Handles graceful shutdown (signals, quit key).
 
 Chameleon contains no knowledge of how tasks are fetched, how config is
@@ -176,14 +189,11 @@ loaded, or how Claude is invoked. It only coordinates.
 
 #### TaskManager (protocol)
 
-Adapter interface to the external task management system. Maps to the
-**Task Management System** in the domain model.
+Adapter interface to the external task management system.
 
 ```
 TaskManager
   poll(label: str) → list[Task]
-  claim(task_id: str) → None
-  complete(task_id: str) → None
 ```
 
 `TaskManager` is a `typing.Protocol`. Concrete implementations speak
@@ -193,11 +203,11 @@ the external system's language. The first implementation is
 #### ConfigManager
 
 Loads and provides Role configurations. Resolves a role name to a full
-`Role` dataclass and derives the label filter.
+`Role` dataclass, or returns `None` if the role is not found.
 
 ```
 ConfigManager
-  load_role(name: str) → Role
+  load_role(name: str) → Role | None
 ```
 
 The config source format (TOML, YAML, CLI flags) is an implementation
@@ -205,55 +215,48 @@ detail of ConfigManager. The rest of the system only sees `Role`.
 
 #### SessionLauncher (protocol)
 
-Builds and runs a Claude session. Maps to the subprocess management
-concerns currently in `_build_claude_cmd` and `_launch_claude`.
+Builds and runs a Claude session.
 
 ```
 SessionLauncher
-  launch(role: Role, task: Task) → None
+  launch(role: Role | None, task: Task) → None
 ```
 
 `SessionLauncher` is a `typing.Protocol`. The concrete implementation
 is `ClaudeLauncher`, which:
 
-- Composes the final prompt from `role.prompt` + `task.title` /
-  `task.description`.
+- Composes the final prompt from optional `role.prompt` + workflow template.
 - Builds the Claude CLI invocation (`--print`, `--agent` flags).
 - Manages terminal state (tty save/restore).
 - Runs Claude as a subprocess.
 
-SessionLauncher owns the **task-to-prompt mapping** — it decides how
-Role and Task content combine into the Claude input.
+SessionLauncher owns the **prompt composition** — it decides how
+Role and Task content combine into the Claude input, including the
+workflow instructions for ticket lifecycle management.
 
 ### Data Types
 
-| Type   | Kind      | Fields                                             |
-|--------|-----------|----------------------------------------------------|
-| `Role` | dataclass | `name`, `agent`, `prompt`, `interactive`, `label`  |
-| `Task` | dataclass | `id`, `title`, `description`, `status`             |
-
-`Role.label` is derived from `Role.name` (e.g., `"reviewer"` →
-`"role-reviewer"`).
+| Type   | Kind      | Fields                                     |
+|--------|-----------|--------------------------------------------|
+| `Role` | dataclass | `name`, `prompt`, `interactive`            |
+| `Task` | dataclass | `id`, `title`, `description`, `status`, `labels` |
 
 ### Data Flow (Single Task Cycle)
 
 ```
 Chameleon.run()
   │
-  ├─ startup
-  │   └─→ ConfigManager.load_role("reviewer") → Role
-  │
   ├─ polling
-  │   └─→ TaskManager.poll("role-reviewer") → [Task, ...]
+  │   └─→ TaskManager.poll("chameleon-task") → [Task, ...]
   │
   ├─ executing
-  │   ├─→ TaskManager.claim(task.id)
-  │   ├─→ SessionLauncher.launch(role, task)
-  │   │     ├─ compose prompt from role.prompt + task content
-  │   │     ├─ build: claude <prompt> [--print] [--agent X]
-  │   │     ├─ save/restore tty state
-  │   │     └─ subprocess.run(...)
-  │   └─→ TaskManager.complete(task.id)
+  │   ├─→ extract_role_name(task.labels) → "reviewer" (or None)
+  │   ├─→ ConfigManager.load_role("reviewer") → Role (or None)
+  │   └─→ SessionLauncher.launch(role, task)
+  │         ├─ compose prompt: [role.prompt] + workflow template
+  │         ├─ build: claude <prompt> [--print] [--agent reviewer]
+  │         ├─ save/restore tty state
+  │         └─ subprocess.run(...)
   │
   └─ back to polling
 ```
@@ -272,11 +275,19 @@ Chameleon.run()
    and future alternatives (e.g., dry-run mode).
 
 3. **SessionLauncher owns prompt composition.** When a task is
-   claimed, Chameleon passes both the `Role` and `Task` to
+   found, Chameleon passes both the optional `Role` and `Task` to
    `SessionLauncher.launch()`. The launcher decides how to combine
-   `role.prompt` with `task.title`/`task.description` into the final
-   Claude input. This keeps Chameleon free of prompt formatting concerns.
+   `role.prompt` with the workflow template into the final Claude
+   input. This keeps Chameleon free of prompt formatting concerns.
 
 4. **ConfigManager is a concrete class.** Unlike TaskManager and
    SessionLauncher, there is no immediate need for multiple config
    backends. A protocol can be extracted later if needed.
+
+5. **Dynamic role resolution.** A single chameleon instance services
+   all roles. The role is resolved per-ticket from `role-*` labels,
+   eliminating the need for one process per role.
+
+6. **Delegated task lifecycle.** The chameleon no longer claims or
+   completes tasks. Instead, the workflow prompt instructs Claude to
+   manage the ticket lifecycle directly via `bd` CLI commands.

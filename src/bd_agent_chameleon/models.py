@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 ROLE_LABEL_PREFIX: str = "role-"
+CHAMELEON_TASK_LABEL: str = "chameleon-task"
 
 
 class TaskStatus(StrEnum):
@@ -22,6 +23,15 @@ class Task:
     title: str
     description: str
     status: TaskStatus
+    labels: list[str]
+
+
+def extract_role_name(labels: list[str]) -> str | None:
+    """Return the role name from the first role-* label, or None."""
+    for label in labels:
+        if label.startswith(ROLE_LABEL_PREFIX):
+            return label[len(ROLE_LABEL_PREFIX):]
+    return None
 
 
 @dataclass(frozen=True)
@@ -31,10 +41,3 @@ class Role:
     name: str
     prompt: str
     interactive: bool
-    agent: str | None = None
-    label: str = ""
-
-    def __post_init__(self) -> None:
-        """Derive label from name if not explicitly set."""
-        if not self.label:
-            object.__setattr__(self, "label", f"{ROLE_LABEL_PREFIX}{self.name}")

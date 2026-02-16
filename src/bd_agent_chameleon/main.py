@@ -18,19 +18,18 @@ app: typer.Typer = typer.Typer()
 
 @app.command()
 def run(
-    role: Annotated[str, typer.Option(help="Role name to load from config.")],
     config: Annotated[Path, typer.Option(help="Path to the TOML config file.")],
     db: Annotated[Path, typer.Option(help="Path to the beads database directory.")],
     poll_interval: Annotated[
         float, typer.Option(help="Poll interval in seconds.")
     ] = 2.0,
 ) -> None:
-    """Run bd-agent-chameleon with the given role configuration."""
+    """Run bd-agent-chameleon with dynamic role resolution."""
     config_mgr: ConfigManager = ConfigManager(config)
     task_mgr: BeadsTaskManager = BeadsTaskManager(db)
     launcher: ClaudeLauncher = ClaudeLauncher()
     interval: timedelta = timedelta(seconds=poll_interval)
-    chameleon: Chameleon = Chameleon(config_mgr, task_mgr, launcher, role, interval)
+    chameleon: Chameleon = Chameleon(config_mgr, task_mgr, launcher, interval)
 
     def _handle_signal(signum: int, frame: FrameType | None) -> None:
         """Set chameleon to shutdown on signal."""

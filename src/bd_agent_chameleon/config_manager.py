@@ -14,18 +14,17 @@ class ConfigManager:
         """Initialize with the path to the TOML configuration file."""
         self._config_path: Path = config_path
 
-    def load_role(self, name: str) -> Role:
-        """Resolve a role name to a Role from the config file."""
+    def load_role(self, name: str) -> Role | None:
+        """Resolve a role name to a Role, or None if not found."""
         with open(self._config_path, "rb") as f:
             config: dict[str, Any] = tomllib.load(f)
 
         if name not in config:
-            raise KeyError(f"Role '{name}' not found in {self._config_path}")
+            return None
 
         role_data: dict[str, Any] = config[name]
         return Role(
             name=name,
             prompt=role_data["prompt"],
             interactive=role_data["interactive"],
-            agent=role_data.get("agent"),
         )

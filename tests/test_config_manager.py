@@ -19,25 +19,12 @@ class TestLoadRole:
             '[reviewer]\nprompt = "Review the code."\ninteractive = false\n'
         )
         mgr: ConfigManager = ConfigManager(config_path=config_file)
-        role: Role = mgr.load_role("reviewer")
+        role: Role | None = mgr.load_role("reviewer")
 
+        assert role is not None
         assert role.name == "reviewer"
         assert role.prompt == "Review the code."
         assert role.interactive is False
-        assert role.agent is None
-        assert role.label == "role-reviewer"
-
-    def test_loads_role_with_agent(self, tmp_path: Path) -> None:
-        """A role with an explicit agent field loads correctly."""
-        config_file: Path = tmp_path / "roles.toml"
-        config_file.write_text(
-            '[coder]\nprompt = "Write code."\ninteractive = false\n'
-            'agent = "my-agent"\n'
-        )
-        mgr: ConfigManager = ConfigManager(config_path=config_file)
-        role: Role = mgr.load_role("coder")
-
-        assert role.agent == "my-agent"
 
     def test_loads_interactive_role(self, tmp_path: Path) -> None:
         """A role with interactive=true loads correctly."""
@@ -46,8 +33,9 @@ class TestLoadRole:
             '[writer]\nprompt = "Write docs."\ninteractive = true\n'
         )
         mgr: ConfigManager = ConfigManager(config_path=config_file)
-        role: Role = mgr.load_role("writer")
+        role: Role | None = mgr.load_role("writer")
 
+        assert role is not None
         assert role.interactive is True
 
     def test_loads_correct_role_from_multi_role_file(
@@ -61,28 +49,29 @@ class TestLoadRole:
         )
         mgr: ConfigManager = ConfigManager(config_path=config_file)
 
-        reviewer: Role = mgr.load_role("reviewer")
-        writer: Role = mgr.load_role("writer")
+        reviewer: Role | None = mgr.load_role("reviewer")
+        writer: Role | None = mgr.load_role("writer")
 
+        assert reviewer is not None
         assert reviewer.name == "reviewer"
         assert reviewer.prompt == "Review."
+        assert writer is not None
         assert writer.name == "writer"
         assert writer.prompt == "Write."
 
-
-class TestLoadRoleErrors:
-    """Tests for ConfigManager.load_role error cases."""
-
-    def test_missing_role_raises_key_error(self, tmp_path: Path) -> None:
-        """KeyError is raised when the requested role is not in the config."""
+    def test_returns_none_for_missing_role(self, tmp_path: Path) -> None:
+        """None is returned when the requested role is not in the config."""
         config_file: Path = tmp_path / "roles.toml"
         config_file.write_text(
             '[reviewer]\nprompt = "Review."\ninteractive = false\n'
         )
         mgr: ConfigManager = ConfigManager(config_path=config_file)
 
-        with pytest.raises(KeyError, match="ghost"):
-            mgr.load_role("ghost")
+        assert mgr.load_role("ghost") is None
+
+
+class TestLoadRoleErrors:
+    """Tests for ConfigManager.load_role error cases."""
 
     def test_missing_file_raises_file_not_found(self, tmp_path: Path) -> None:
         """FileNotFoundError is raised when the config file does not exist."""

@@ -6,25 +6,36 @@ import termios
 
 from bd_agent_chameleon.models import Role, Task
 
+_WORKFLOW_TEMPLATE: str = """
+Use this workflow to execute the task in the ticket:
+  - Read the ticket using: `bd show {ticket_id}`
+  - Claim the ticket using: `bd update {ticket_id} --claim`
+  - Do the work described in the ticket
+  - Then close the ticket using: `bd close {ticket_id}`"""
+
 
 class ClaudeLauncher:
     """Launches Claude CLI sessions with prompt composition and terminal management."""
 
     @staticmethod
-    def _compose_prompt(role: Role, task: Task) -> str:
-        """Combine role prompt with task content into a final prompt."""
-        return f"{role.prompt}\n\n## Task: {task.title}\n\n{task.description}"
+    def _compose_prompt(role: Role | None, task: Task) -> str:
+        """Combine optional role context with workflow instructions."""
+        parts: list[str] = []
+        if role is not None:
+            parts.append(role.prompt)
+        parts.append(_WORKFLOW_TEMPLATE.format(ticket_id=task.id))
+        return "\n".join(parts)
 
     @staticmethod
-    def _build_command(prompt: str, role: Role) -> list[str]:
-        """Build the Claude CLI command from a prompt and role configuration."""
+    def _build_command(prompt: str, role: Role | None) -> list[str]:
+        """Build the Claude CLI command from a prompt and optional role."""
         cmd: list[str] = ["claude", prompt]
 
-        if not role.interactive:
+        if role is not None and not role.interactive:
             cmd.append("--print")
 
-        if role.agent is not None:
-            cmd.extend(["--agent", role.agent])
+        if role is not None:
+            cmd.extend(["--agent", role.name])
 
         return cmd
 
@@ -37,8 +48,8 @@ class ClaudeLauncher:
         finally:
             termios.tcsetattr(sys.stdin, termios.TCSADRAIN, saved_attrs)
 
-    def launch(self, role: Role, task: Task) -> None:
-        """Launch a Claude session for the given role and task."""
+    def launch(self, role: Role | None, task: Task) -> None:
+        """Launch a Claude session for the given task and optional role."""
         prompt: str = self._compose_prompt(role, task)
         cmd: list[str] = self._build_command(prompt, role)
 
